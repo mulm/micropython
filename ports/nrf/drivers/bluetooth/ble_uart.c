@@ -35,6 +35,8 @@
 
 #if MICROPY_PY_BLE_NUS
 
+STATIC bool ble_uart_enabled(void);
+
 static ubluepy_uuid_obj_t uuid_obj_service = {
     .base.type = &ubluepy_uuid_type,
     .type = UBLUEPY_UUID_128_BIT,
@@ -73,25 +75,13 @@ static ubluepy_characteristic_obj_t ble_uart_char_tx = {
     .attrs = UBLUEPY_ATTR_CCCD,
 };
 
-static ubluepy_peripheral_obj_t ble_uart_peripheral = {
-    .base.type = &ubluepy_peripheral_type,
-    .conn_handle = 0xFFFF,
-};
-
 static volatile bool m_cccd_enabled;
-static volatile bool m_connected;
 
 ringBuffer_typedef(uint8_t, ringbuffer_t);
 
 static ringbuffer_t   m_rx_ring_buffer;
 static ringbuffer_t * mp_rx_ring_buffer = &m_rx_ring_buffer;
 static uint8_t        m_rx_ring_buffer_data[128];
-
-static ubluepy_advertise_data_t m_adv_data_uart_service;
-
-#if BLUETOOTH_WEBBLUETOOTH_REPL
-static ubluepy_advertise_data_t m_adv_data_eddystone_url;
-#endif // BLUETOOTH_WEBBLUETOOTH_REPL
 
 int mp_hal_stdin_rx_chr(void) {
     wdt_feed(false);
@@ -139,21 +129,14 @@ void mp_hal_stdout_tx_strn_cooked(const char *str, mp_uint_t len) {
     mp_hal_stdout_tx_strn(str, len);
 }
 
-STATIC void gap_event_handler(mp_obj_t self_in, uint16_t event_id, uint16_t conn_handle, uint16_t length, uint8_t * data) {
-    ubluepy_peripheral_obj_t * self = MP_OBJ_TO_PTR(self_in);
+void gap_event_handler_uart(mp_obj_t self_in, uint16_t event_id, uint16_t conn_handle, uint16_t length, uint8_t * data) {
 
-    if (event_id == 16) {                // connect event
-        self->conn_handle = conn_handle;
-        m_connected = true;
-    } else if (event_id == 17) {         // disconnect event
-        self->conn_handle = 0xFFFF;      // invalid connection handle
-        m_connected = false;
+    if (event_id == 17) {         // disconnect event
         m_cccd_enabled = false;
-        ble_uart_advertise();
     }
 }
 
-STATIC void gatts_event_handler(mp_obj_t self_in, uint16_t event_id, uint16_t attr_handle, uint16_t length, uint8_t * data) {
+void gatts_event_handler_uart(mp_obj_t self_in, uint16_t event_id, uint16_t attr_handle, uint16_t length, uint8_t * data) {
     ubluepy_peripheral_obj_t * self = MP_OBJ_TO_PTR(self_in);
     (void)self;
 
@@ -177,7 +160,7 @@ STATIC void gatts_event_handler(mp_obj_t self_in, uint16_t event_id, uint16_t at
     }
 }
 
-void ble_uart_init0(void) {
+void ble_uart_init0(ubluepy_peripheral_obj_t * p_ble_peripheral, mp_obj_t service_list) {
     uint8_t base_uuid[] = {0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x00, 0x00, 0x40, 0x6E};
     uint8_t uuid_vs_idx;
 
@@ -207,45 +190,10 @@ void ble_uart_init0(void) {
     mp_obj_list_append(ble_uart_service.char_list, MP_OBJ_FROM_PTR(&ble_uart_char_rx));
 
     // setup the peripheral
-    ble_uart_peripheral.service_list = mp_obj_new_list(0, NULL);
-    mp_obj_list_append(ble_uart_peripheral.service_list, MP_OBJ_FROM_PTR(&ble_uart_service));
-    ble_uart_service.p_periph = &ble_uart_peripheral;
+    mp_obj_list_append(p_ble_peripheral->service_list, MP_OBJ_FROM_PTR(&ble_uart_service));
+    ble_uart_service.p_periph = p_ble_peripheral;
 
-    ble_drv_gap_event_handler_set(MP_OBJ_FROM_PTR(&ble_uart_peripheral), gap_event_handler);
-    ble_drv_gatts_event_handler_set(MP_OBJ_FROM_PTR(&ble_uart_peripheral), gatts_event_handler);
-
-    ble_uart_peripheral.conn_handle = 0xFFFF;
-
-#ifdef MICROPY_HW_NUS_NAME
-    char device_name[] = MICROPY_HW_NUS_NAME;
-#else
-    char device_name[] = "mpus";
-#endif
-
-    mp_obj_t service_list = mp_obj_new_list(0, NULL);
     mp_obj_list_append(service_list, MP_OBJ_FROM_PTR(&ble_uart_service));
-
-    mp_obj_t * services = NULL;
-    mp_uint_t  num_services;
-    mp_obj_get_array(service_list, &num_services, &services);
-
-    m_adv_data_uart_service.p_services      = services;
-    m_adv_data_uart_service.num_of_services = num_services;
-    m_adv_data_uart_service.p_device_name   = (uint8_t *)device_name;
-    m_adv_data_uart_service.device_name_len = strlen(device_name);
-    m_adv_data_uart_service.connectable     = true;
-    m_adv_data_uart_service.p_data          = NULL;
-
-#if BLUETOOTH_WEBBLUETOOTH_REPL
-    // for now point eddystone URL to https://goo.gl/F7fZ69 => https://aykevl.nl/apps/nus/
-    static uint8_t eddystone_url_data[27] = {0x2, 0x1, 0x6,
-                                             0x3, 0x3, 0xaa, 0xfe,
-                                             19, 0x16, 0xaa, 0xfe, 0x10, 0xee, 0x3, 'g', 'o', 'o', '.', 'g', 'l', '/', 'F', '7', 'f', 'Z', '6', '9'};
-    // eddystone url adv data
-    m_adv_data_eddystone_url.p_data      = eddystone_url_data;
-    m_adv_data_eddystone_url.data_len    = sizeof(eddystone_url_data);
-    m_adv_data_eddystone_url.connectable = false;
-#endif
 
     m_cccd_enabled = false;
 
@@ -254,29 +202,6 @@ void ble_uart_init0(void) {
     m_rx_ring_buffer.start = 0;
     m_rx_ring_buffer.end = 0;
     m_rx_ring_buffer.elems = m_rx_ring_buffer_data;
-
-    m_connected = false;
-
-    ble_uart_advertise();
-}
-
-void ble_uart_advertise(void) {
-#if BLUETOOTH_WEBBLUETOOTH_REPL
-    while (!m_connected) {
-        (void)ble_drv_advertise_data(&m_adv_data_uart_service);
-        mp_hal_delay_ms(500);
-        (void)ble_drv_advertise_data(&m_adv_data_eddystone_url);
-        mp_hal_delay_ms(500);
-    }
-
-    ble_drv_advertise_stop();
-#else
-    (void)ble_drv_advertise_data(&m_adv_data_uart_service);
-#endif // BLUETOOTH_WEBBLUETOOTH_REPL
-}
-
-bool ble_uart_connected(void) {
-    return (m_connected);
 }
 
 bool ble_uart_enabled(void) {

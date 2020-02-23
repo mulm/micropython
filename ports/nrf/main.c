@@ -62,8 +62,8 @@
 #include "nrf_sdm.h"
 #endif
 
-#if (MICROPY_PY_BLE_NUS)
-#include "ble_uart.h"
+#if (MICROPY_PY_BLE)
+#include "ble_common.h"
 #endif
 
 #if MICROPY_PY_MACHINE_SOFT_PWM
@@ -211,8 +211,8 @@ pin_init0();
     // The REPL mode can change, or it can request a soft reset.
     int ret_code = 0;
 
-#if MICROPY_PY_BLE_NUS
-    ble_uart_init0();
+#if MICROPY_PY_BLE
+    ble_init0();
 #endif
 
 #if MICROPY_PY_MACHINE_SOFT_PWM

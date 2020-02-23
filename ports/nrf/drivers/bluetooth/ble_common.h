@@ -24,18 +24,13 @@
  * THE SOFTWARE.
  */
 
-#ifndef BLUETOOTH_LE_UART_H__
-#define BLUETOOTH_LE_UART_H__
+#ifndef BLUETOOTH_LE_COMMON_H__
+#define BLUETOOTH_LE_COMMON_H__
 
 #if BLUETOOTH_SD
 
-#include "modubluepy.h"
-#include "ble_drv.h"
-
-void ble_uart_init0(ubluepy_peripheral_obj_t * p_ble_peripheral, mp_obj_t service_list);
-void gap_event_handler_uart(mp_obj_t self_in, uint16_t event_id, uint16_t conn_handle, uint16_t length, uint8_t * data);
-void gatts_event_handler_uart(mp_obj_t self_in, uint16_t event_id, uint16_t attr_handle, uint16_t length, uint8_t * data);
+void ble_init0(void);
 
 #endif // BLUETOOTH_SD
 
-#endif // BLUETOOTH_LE_UART_H__
+#endif // BLUETOOTH_LE_COMMON_H__
