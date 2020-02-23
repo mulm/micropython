@@ -239,6 +239,7 @@ SRC_C += \
 	drivers/bluetooth/ble_drv.c \
 	drivers/bluetooth/ble_common.c \
 	drivers/bluetooth/ble_uart.c \
+	drivers/bluetooth/ble_bas.c \
 
 ifeq ($(MCU_SUB_VARIANT), nrf52840)
 

@@ -27,6 +27,7 @@
 #include <string.h>
 #include "ble_common.h"
 #include "ble_uart.h"
+#include "ble_bas.h"
 
 #if BLUETOOTH_SD
 
@@ -70,6 +71,9 @@ void ble_init0(void)
 
 #if MICROPY_PY_BLE_NUS
     ble_uart_init0(&ble_uart_peripheral, service_list);
+#endif
+#if MICROPY_PY_BLE_BAS
+    ble_bas_init0(&ble_uart_peripheral, service_list);
 #endif
 
     ble_drv_gap_event_handler_set(MP_OBJ_FROM_PTR(&ble_uart_peripheral), gap_event_handler);
